@@ -1500,6 +1500,11 @@ plots.doAutoMargin = function(gd) {
             //Ideally we should calculate the title's deminsion base on its angle.. but I dont know where that info is stored.. so lets use the axis name to determine its angle
             var angle = (axisName == 'y'? 90: 0);
             measurement = plots.calculateTextMeasurements(axisLayer.title, axisLayer.titlefont, angle);
+            
+            if(adjustedMargin == 0){
+                adjustedMargin = 10;//we need to account for hover title. Whenever the user zooms in too much and the x-axis is hidden and they hover over a data point
+            }
+            
             if(axisName == 'y'){
               //Most likely the text will be rotated 90degees on the Y-axis.. in that case we care about the width of the text.
               //So the width of the title + the largest tick's width would give us the adjusted margin 
