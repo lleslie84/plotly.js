@@ -1478,6 +1478,7 @@ plots.doAutoMargin = function(gd) {
     var layers = ['yaxis', 'xaxis', 'xaxis2']//these are the only layers I want to adjust the layout margin
     var axes = Plotly.Axes;
     var measurementKeys = {'left': 'width', 'right': 'width', 'top': 'height','bottom': 'height'};
+    var yAxisTitleHeight = 0;
 
     layers.forEach(function(layerName) {
         var axisLayer = fullLayout[layerName];
@@ -1504,13 +1505,14 @@ plots.doAutoMargin = function(gd) {
             if(adjustedMargin == 0){
                 adjustedMargin = 10;//we need to account for hover title. Whenever the user zooms in too much and the x-axis is hidden and they hover over a data point
             }
-            
+
             if(axisName == 'y'){
               //Most likely the text will be rotated 90degees on the Y-axis.. in that case we care about the width of the text.
               //So the width of the title + the largest tick's width would give us the adjusted margin 
                 adjustedMargin += measurement.width;
+                yAxisTitleHeight = measurement.height > yAxisTitleHeight ? measurement.height : yAxisTitleHeight;
             } else {
-                //rotated height of tick + height of title
+              //rotated height of tick + height of title
                 adjustedMargin += measurement.height;
             }
 
@@ -1544,6 +1546,7 @@ plots.doAutoMargin = function(gd) {
         adjustBottomMargin.push(fullLayout.margin.b || 0);
     }
 
+
     adjustLeftMargin.push(0);
     adjustRightMargin.push(0);
     adjustTopMargin.push(0);
@@ -1557,6 +1560,17 @@ plots.doAutoMargin = function(gd) {
         mt = Math.max.apply(null, adjustTopMargin),
         mb = Math.max.apply(null, adjustBottomMargin),
         pm = fullLayout._pushmargin;
+
+    
+    if(mt == 0){
+        //So we need to account for the case where the title's height cannot fit in the allotted space after the top & bottom margin is removed from
+        // the height of the layout. In that case we need to add enough space to render the title.. the issue is that the user needs to provide 
+        //sufficent layout height in order to render the plot.. but lets do what we can.
+        var remainingHeight = Math.round(fullLayout.height) - (mt + mb);
+        if(remainingHeight < yAxisTitleHeight){
+            mt += (yAxisTitleHeight - remainingHeight);
+        }
+    }
 
     if(fullLayout.margin.autoexpand !== false) {
 
