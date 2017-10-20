@@ -1433,6 +1433,38 @@ plots.autoMargin = function(gd, id, o) {
     }
 };
 
+plots.calculateTextMeasurements = function(text, font, angle, axisName) {
+    if(typeof(font) !== "string"){
+        font = font.size + "px "+  font.family;
+    }
+
+    var tag = document.createElement("div");
+    tag.style.position = "absolute";
+    tag.style.left = "-999em";
+    tag.style.whiteSpace = "nowrap";
+    tag.style.font = font;
+    tag.innerHTML = text;
+    
+
+    if(angle == 'auto' && axisName == 'x'){
+        angle = 90
+    }
+
+    if(!isNaN(+angle)){
+        tag.style.transform = 'rotate('+ angle+'deg)';
+    }
+
+    document.body.appendChild(tag);
+    var rec = tag.getBoundingClientRect();
+
+    var width = rec.width;
+    var height = rec.height;
+
+    document.body.removeChild(tag);
+
+    return {width: width, height: height};
+}
+
 plots.doAutoMargin = function(gd) {
     var fullLayout = gd._fullLayout;
     if(!fullLayout._size) fullLayout._size = {};
@@ -1441,14 +1473,104 @@ plots.doAutoMargin = function(gd) {
     var gs = fullLayout._size,
         oldmargins = JSON.stringify(gs);
 
+    //Lets adjust the layout margin to account for the axis tick label positions to prevent overflow issues and overlapping of labels
+    var adjustLeftMargin = [], adjustRightMargin = [] , adjustTopMargin = [], adjustBottomMargin = [];
+    var layers = ['yaxis', 'xaxis', 'xaxis2']//these are the only layers I want to adjust the layout margin
+    var axes = Plotly.Axes;
+    var measurementKeys = {'left': 'width', 'right': 'width', 'top': 'height','bottom': 'height'};
+    var yAxisTitleHeight = 0;
+
+    layers.forEach(function(layerName) {
+        var axisLayer = fullLayout[layerName];
+        if(axisLayer && axisLayer._length){
+            var axisRange = axes.calcTicks(axisLayer);
+            var largestVal = {text:''}
+            var axisName = axisLayer._id.charAt(0);
+
+            //find the largest label. this can be optimize.. but considering that the data is small; I'm not going to worry about it
+            for(var i=0; i<axisRange.length; i++ ){
+                if(axisRange[i].text.length >= largestVal.text.length){
+                  largestVal = axisRange[i];
+                }
+            }
+
+            var measurement = plots.calculateTextMeasurements(largestVal.text, axisLayer.tickfont, axisLayer.tickangle, axisName);
+            //separate for readablity
+            var key  = measurementKeys[axisLayer.side || (axisName =='x'? 'bottom': 'left')];
+            var adjustedMargin = measurement[key];
+            //Ideally we should calculate the title's deminsion base on its angle.. but I dont know where that info is stored.. so lets use the axis name to determine its angle
+            var angle = (axisName == 'y'? 90: 0);
+            measurement = plots.calculateTextMeasurements(axisLayer.title, axisLayer.titlefont, angle);
+            
+            if(adjustedMargin == 0){
+                adjustedMargin = 10;//we need to account for hover title. Whenever the user zooms in too much and the x-axis is hidden and they hover over a data point
+            }
+
+            if(axisName == 'y'){
+              //Most likely the text will be rotated 90degees on the Y-axis.. in that case we care about the width of the text.
+              //So the width of the title + the largest tick's width would give us the adjusted margin 
+                adjustedMargin += measurement.width;
+                yAxisTitleHeight = measurement.height > yAxisTitleHeight ? measurement.height : yAxisTitleHeight;
+            } else {
+              //rotated height of tick + height of title
+                adjustedMargin += measurement.height;
+            }
+
+            switch(axisLayer.side){
+                case 'left':
+                    adjustLeftMargin.push(adjustedMargin);
+                    break;
+                case 'right':
+                    adjustRightMargin.push(adjustedMargin);
+                    break;
+                case 'top':
+                    adjustTopMargin.push(adjustedMargin);
+                    break;
+                case 'bottom':
+                    adjustBottomMargin.push(adjustedMargin);
+                    break;
+            }
+        }
+    });
+
+    if(!adjustLeftMargin.length){
+        adjustLeftMargin.push(fullLayout.margin.l || 0);
+    }
+    if(!adjustRightMargin.length){
+        adjustRightMargin.push(fullLayout.margin.r || 0);
+    }
+    if(!adjustTopMargin.length){
+        adjustTopMargin.push(fullLayout.margin.t || 0);
+    }
+    if(!adjustBottomMargin.length){
+        adjustBottomMargin.push(fullLayout.margin.b || 0);
+    }
+
+
+    adjustLeftMargin.push(0);
+    adjustRightMargin.push(0);
+    adjustTopMargin.push(0);
+    adjustBottomMargin.push(0);
+
     // adjust margins for outside components
     // fullLayout.margin is the requested margin,
     // fullLayout._size has margins and plotsize after adjustment
-    var ml = Math.max(fullLayout.margin.l || 0, 0),
-        mr = Math.max(fullLayout.margin.r || 0, 0),
-        mt = Math.max(fullLayout.margin.t || 0, 0),
-        mb = Math.max(fullLayout.margin.b || 0, 0),
+    var ml = Math.max.apply(null, adjustLeftMargin),
+        mr = Math.max.apply(null, adjustRightMargin),
+        mt = Math.max.apply(null, adjustTopMargin),
+        mb = Math.max.apply(null, adjustBottomMargin),
         pm = fullLayout._pushmargin;
+
+    
+    if(mt == 0){
+        //So we need to account for the case where the title's height cannot fit in the allotted space after the top & bottom margin is removed from
+        // the height of the layout. In that case we need to add enough space to render the title.. the issue is that the user needs to provide 
+        //sufficent layout height in order to render the plot.. but lets do what we can.
+        var remainingHeight = Math.round(fullLayout.height) - (mt + mb);
+        if(remainingHeight < yAxisTitleHeight){
+            mt += (yAxisTitleHeight - remainingHeight);
+        }
+    }
 
     if(fullLayout.margin.autoexpand !== false) {
 
